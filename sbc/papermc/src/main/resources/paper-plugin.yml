@@ -1,0 +1,6 @@
+name: SoulardiganBackard
+version: "1.0.0"
+main: org.wilkinsonk.sbc.papermc.SBCServerPaper
+api-version: "1.21"
+description: ""
+authors: [WilkinsonK]
