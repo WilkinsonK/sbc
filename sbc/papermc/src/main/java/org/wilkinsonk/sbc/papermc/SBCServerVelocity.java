@@ -51,26 +51,33 @@ public class SBCServerVelocity implements SBCServerPlugin {
     @Subscribe
     public void onPluginMessage(PluginMessageEvent event) {
         if (!(event.getSource() instanceof Player player)) return;
+        if (whenConnectToServer(event, player)) return;
+        if (whenRequestServerList(event, player)) return;
+    }
 
-        if (event.getIdentifier().equals(CHANNEL_CONNECT_TO_SERVER)) {
-            event.setResult(PluginMessageEvent.ForwardResult.handled());
-            byte[] data = event.getData();
-            if (data == null) return;
-            String serverId = readString(ByteStreams.newDataInput(data));
-            Proxy.getServer(serverId).ifPresentOrElse(
-                server -> player.createConnectionRequest(server).connectWithIndication(),
-                () -> Logger.warn("Player '{}' requested unknown server '{}'", player.getUsername(), serverId)
-            );
-            return;
-        }
-
-        if (!event.getIdentifier().equals(CHANNEL_REQUEST_SERVER_LIST)) return;
+    private Boolean whenConnectToServer(PluginMessageEvent event, Player player) {
+        if (!event.getIdentifier().equals(CHANNEL_CONNECT_TO_SERVER)) return false;
 
         event.setResult(PluginMessageEvent.ForwardResult.handled());
+        byte[] data = event.getData();
+        if (data == null) return false;
+        String serverId = readString(ByteStreams.newDataInput(data));
+        Proxy.getServer(serverId).ifPresentOrElse(
+            server -> player.createConnectionRequest(server).connectWithIndication(),
+            () -> Logger.warn("Player '{}' requested unknown server '{}'", player.getUsername(), serverId)
+        );
+        return true;
+    }
 
+    private Boolean whenRequestServerList(PluginMessageEvent event, Player player) {
+        if (!event.getIdentifier().equals(CHANNEL_REQUEST_SERVER_LIST)) return false;
+
+        event.setResult(PluginMessageEvent.ForwardResult.handled());
         Logger.info("Received server list request from player '{}'", player.getUsername());
-
-        GetServerList().thenAccept(servers -> {
+        String currentServerName = player.getCurrentServer()
+            .map(sc -> sc.getServerInfo().getName())
+            .orElse("");
+        GetServerList(currentServerName).thenAccept(servers -> {
             ByteArrayDataOutput out = ByteStreams.newDataOutput();
             writeVarInt(out, servers.size());
             servers.forEach(server -> {
@@ -78,10 +85,12 @@ public class SBCServerVelocity implements SBCServerPlugin {
                 writeString(out, server.Name());
                 writeString(out, server.IconMaterial());
                 writeBoolean(out, server.IsOnline());
+                writeBoolean(out, server.IsCurrentPlayerServer());
             });
             Logger.info("Sending server list response to player '{}' with {} server(s)", player.getUsername(), servers.size());
             player.sendPluginMessage(CHANNEL_RESPOND_SERVER_LIST, out.toByteArray());
         });
+        return true;
     }
 
     public void RegisterChannels() {
@@ -90,13 +99,14 @@ public class SBCServerVelocity implements SBCServerPlugin {
         Proxy.getChannelRegistrar().register(CHANNEL_CONNECT_TO_SERVER);
     }
 
-    public CompletableFuture<List<ServerEntry>> GetServerList() {
+    public CompletableFuture<List<ServerEntry>> GetServerList(String currentServerName) {
         List<CompletableFuture<ServerEntry>> futures = Proxy.getAllServers().stream()
             .map(server -> {
                 String name = server.getServerInfo().getName();
+                boolean isCurrent = name.equals(currentServerName);
                 return server.ping()
-                    .<ServerEntry>thenApply(sp -> new ServerEntry(name, name, "", true))
-                    .exceptionally(ex -> new ServerEntry(name, name, "", false));
+                    .<ServerEntry>thenApply(sp -> new ServerEntry(name, name, "", true, isCurrent))
+                    .exceptionally(ex -> new ServerEntry(name, name, "", false, isCurrent));
             })
             .collect(Collectors.toList());
 

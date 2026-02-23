@@ -16,6 +16,7 @@ public record RespondServerList(List<SoulardiganBackyard.ServerEntry> servers) i
         PacketCodecs.STRING,  SoulardiganBackyard.ServerEntry::Name,
         PacketCodecs.STRING,  SoulardiganBackyard.ServerEntry::IconMaterial,
         PacketCodecs.BOOLEAN, SoulardiganBackyard.ServerEntry::IsOnline,
+        PacketCodecs.BOOLEAN, SoulardiganBackyard.ServerEntry::IsCurrentPlayerServer,
         SoulardiganBackyard.ServerEntry::new
     );
 

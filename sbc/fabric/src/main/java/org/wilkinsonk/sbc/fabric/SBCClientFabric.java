@@ -4,6 +4,7 @@ import org.lwjgl.glfw.GLFW;
 import org.wilkinsonk.sbc.fabric.payload.RequestServerConnect;
 import org.wilkinsonk.sbc.fabric.payload.RequestServerList;
 import org.wilkinsonk.sbc.fabric.payload.RespondServerList;
+import org.wilkinsonk.sbc.fabric.screen.LoadingGui;
 import org.wilkinsonk.sbc.fabric.screen.ServerSelectionGui;
 
 import io.github.cottonmc.cotton.gui.client.CottonClientScreen;
@@ -43,6 +44,7 @@ public class SBCClientFabric implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (keyBinding.wasPressed()) {
                 if (client.getNetworkHandler() != null) {
+                    client.setScreen(new CottonClientScreen(new LoadingGui("Fetching Server List... ")));
                     ClientPlayNetworking.send(new RequestServerList());
                 }
             }

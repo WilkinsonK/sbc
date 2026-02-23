@@ -50,6 +50,6 @@ public class SoulardiganBackyard {
     /**
      * A single server entry type.
      */
-    public record ServerEntry(String Id, String Name, String IconMaterial, Boolean IsOnline) {}
+    public record ServerEntry(String Id, String Name, String IconMaterial, Boolean IsOnline, Boolean IsCurrentPlayerServer) {}
 
 }

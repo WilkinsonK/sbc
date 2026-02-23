@@ -5,6 +5,7 @@ import java.util.List;
 import org.wilkinsonk.sbc.SoulardiganBackyard;
 import org.wilkinsonk.sbc.fabric.payload.RequestServerConnect;
 
+import io.github.cottonmc.cotton.gui.client.CottonClientScreen;
 import io.github.cottonmc.cotton.gui.client.LightweightGuiDescription;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import io.github.cottonmc.cotton.gui.widget.WButton;
@@ -68,6 +69,7 @@ public class ServerSelectionGui extends LightweightGuiDescription {
             if (entry == null) return;
 
             boolean hovered = entry.IsOnline()
+                           && !entry.IsCurrentPlayerServer()
                            && mouseX >= 0 && mouseX < getWidth()
                            && mouseY >= 0 && mouseY < getHeight();
 
@@ -77,6 +79,11 @@ public class ServerSelectionGui extends LightweightGuiDescription {
             // Online/offline status dot
             int dotColor = entry.IsOnline() ? 0xFF55FF55 : 0xFFFF5555;
             context.fill(x + 5, y + 12, x + 9, y + 16, dotColor);
+
+            // Current server indicator
+            if (entry.IsCurrentPlayerServer()) {
+                context.fill(x + getWidth() - 9, y + 12, x + getWidth() - 5, y + 16, 0xFFFFAA00);
+            }
 
             // Icon (if set)
             int textOffset = 14;
@@ -95,9 +102,9 @@ public class ServerSelectionGui extends LightweightGuiDescription {
 
         @Override
         public InputResult onClick(Click click, boolean doubled) {
-            if (entry == null || !entry.IsOnline()) return InputResult.IGNORED;
+            if (entry == null || !entry.IsOnline() || entry.IsCurrentPlayerServer()) return InputResult.IGNORED;
             ClientPlayNetworking.send(new RequestServerConnect(entry.Id()));
-            MinecraftClient.getInstance().setScreen(null);
+            MinecraftClient.getInstance().setScreen(new CottonClientScreen(new LoadingGui("Connnecting... ")));
             return InputResult.PROCESSED;
         }
     }
