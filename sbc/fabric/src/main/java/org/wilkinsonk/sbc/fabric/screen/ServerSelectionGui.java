@@ -77,12 +77,10 @@ public class ServerSelectionGui extends LightweightGuiDescription {
             context.fill(x, y, x + getWidth(), y + getHeight(), hovered ? 0xFF4A4A4A : 0xFF383838);
 
             // Online/offline status dot
-            int dotColor = entry.IsOnline() ? 0xFF55FF55 : 0xFFFF5555;
-            context.fill(x + 5, y + 12, x + 9, y + 16, dotColor);
-
-            // Current server indicator
             if (entry.IsCurrentPlayerServer()) {
-                context.fill(x + getWidth() - 9, y + 12, x + getWidth() - 5, y + 16, 0xFFFFAA00);
+                context.fill(x + 5, y + 12, x + 9, y + 16,  0xFF0AF2EE);
+            } else {
+                context.fill(x + 5, y + 12, x + 9, y + 16, entry.IsOnline() ? 0xFF55FF55 : 0xFFFF5555);
             }
 
             // Icon (if set)

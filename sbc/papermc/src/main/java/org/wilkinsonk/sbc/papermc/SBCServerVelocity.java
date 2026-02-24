@@ -36,20 +36,17 @@ import org.wilkinsonk.sbc.ByteArrayUtil;
     name = SoulardiganBackyard.NAME_LONG,
     version = SoulardiganBackyard.BUILD_VERSION
 )
-public class SBCServerVelocity {
+public class SBCServerVelocity extends SBCServer {
     private static final MinecraftChannelIdentifier CHANNEL_REQUEST_SERVER_LIST  = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_REQUEST_SERVER_LIST);
     private static final MinecraftChannelIdentifier CHANNEL_RESPOND_SERVER_LIST  = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_RESPOND_SERVER_LIST);
     private static final MinecraftChannelIdentifier CHANNEL_CONNECT_TO_SERVER    = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_CONNECT_TO_SERVER);
     private static final MinecraftChannelIdentifier CHANNEL_DECLARE_SERVER_ICON  = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_DECLARE_SERVER_ICON);
 
-    private static final String DEFAULT_ICON_KEY     = "default-icon";
-    private static final String DEFAULT_ICON_FALLBACK = "grass_block";
-
     private final ProxyServer Proxy;
     private final Logger Logger;
     private final Path DataDirectory;
     private final Map<String, String> serverIcons = new ConcurrentHashMap<>();
-    private String defaultIcon = DEFAULT_ICON_FALLBACK;
+    private String defaultIcon = ConfigProperty.ICON.DefaultValue;
 
     @Inject
     public SBCServerVelocity(ProxyServer proxy, Logger logger, @DataDirectory Path dataDirectory) {
@@ -64,7 +61,7 @@ public class SBCServerVelocity {
         if (!Files.exists(configFile)) {
             try {
                 Files.createDirectories(DataDirectory);
-                props.setProperty(DEFAULT_ICON_KEY, DEFAULT_ICON_FALLBACK);
+                ConfigProperty.ICON.Proxy.Apply(props);
                 try (OutputStream out = Files.newOutputStream(configFile)) {
                     props.store(out, "SBC Velocity Configuration");
                 }
@@ -79,7 +76,7 @@ public class SBCServerVelocity {
             Logger.error("Failed to load config, using built-in defaults", e);
             return;
         }
-        defaultIcon = props.getProperty(DEFAULT_ICON_KEY, DEFAULT_ICON_FALLBACK);
+        defaultIcon = ConfigProperty.ICON.Proxy.Get(props);
         Logger.info("Loaded config: default-icon='{}'", defaultIcon);
     }
 
@@ -93,7 +90,6 @@ public class SBCServerVelocity {
     }
 
     @Subscribe
-    @SuppressWarnings("null")
     public void onServerConnected(ServerPostConnectEvent event) {
         byte[] request = new byte[0];
         event.getPlayer().getCurrentServer().ifPresentOrElse(
@@ -103,6 +99,7 @@ public class SBCServerVelocity {
     }
 
     @Subscribe
+    @SuppressWarnings("null")
     public void onDeclareServerIcon(PluginMessageEvent event) {
         if (!event.getIdentifier().equals(CHANNEL_DECLARE_SERVER_ICON)) return;
         event.setResult(PluginMessageEvent.ForwardResult.handled());
