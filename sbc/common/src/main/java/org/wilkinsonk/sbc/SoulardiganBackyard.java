@@ -38,6 +38,11 @@ public class SoulardiganBackyard {
          * to connect to a specific server.
         */
         public static final String CONNECT_TO_SERVER = "connect_to_server";
+        /**
+         * Listener topic to subscribe to for when a backend provides
+         * an icon.
+         */
+        public static final String DECLARE_SERVER_ICON = "declare_server_icon";
 
         public static String GetFQCT(String topicName) {
             return String.format("%s:%s", NAME, topicName);
@@ -46,6 +51,7 @@ public class SoulardiganBackyard {
     public static final String CHANNEL_TOPIC_REQUEST_SERVER_LIST = CHANNEL_TOPIC.GetFQCT(CHANNEL_TOPIC.REQUEST_SERVER_LIST);
     public static final String CHANNEL_TOPIC_RESPOND_SERVER_LIST = CHANNEL_TOPIC.GetFQCT(CHANNEL_TOPIC.RESPOND_SERVER_LIST);
     public static final String CHANNEL_TOPIC_CONNECT_TO_SERVER   = CHANNEL_TOPIC.GetFQCT(CHANNEL_TOPIC.CONNECT_TO_SERVER);
+    public static final String CHANNEL_TOPIC_DECLARE_SERVER_ICON = CHANNEL_TOPIC.GetFQCT(CHANNEL_TOPIC.DECLARE_SERVER_ICON);
 
     /**
      * A single server entry type.

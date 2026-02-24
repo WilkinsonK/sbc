@@ -1,76 +1,138 @@
 package org.wilkinsonk.sbc.papermc;
 
-import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-
-import com.google.common.io.ByteArrayDataInput;
 
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 import com.google.inject.Inject;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
+import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.Plugin;
+import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import org.slf4j.Logger;
 
-
-import org.wilkinsonk.sbc.SBCServerPlugin;
 import org.wilkinsonk.sbc.SoulardiganBackyard;
 import org.wilkinsonk.sbc.SoulardiganBackyard.ServerEntry;
+import org.wilkinsonk.sbc.ByteArrayUtil;
 
 @Plugin(
     id = SoulardiganBackyard.NAME,
     name = SoulardiganBackyard.NAME_LONG,
     version = SoulardiganBackyard.BUILD_VERSION
 )
-public class SBCServerVelocity implements SBCServerPlugin {
-    private static final MinecraftChannelIdentifier CHANNEL_REQUEST_SERVER_LIST = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_REQUEST_SERVER_LIST);
-    private static final MinecraftChannelIdentifier CHANNEL_RESPOND_SERVER_LIST = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_RESPOND_SERVER_LIST);
-    private static final MinecraftChannelIdentifier CHANNEL_CONNECT_TO_SERVER   = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_CONNECT_TO_SERVER);
+public class SBCServerVelocity {
+    private static final MinecraftChannelIdentifier CHANNEL_REQUEST_SERVER_LIST  = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_REQUEST_SERVER_LIST);
+    private static final MinecraftChannelIdentifier CHANNEL_RESPOND_SERVER_LIST  = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_RESPOND_SERVER_LIST);
+    private static final MinecraftChannelIdentifier CHANNEL_CONNECT_TO_SERVER    = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_CONNECT_TO_SERVER);
+    private static final MinecraftChannelIdentifier CHANNEL_DECLARE_SERVER_ICON  = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_DECLARE_SERVER_ICON);
+
+    private static final String DEFAULT_ICON_KEY     = "default-icon";
+    private static final String DEFAULT_ICON_FALLBACK = "grass_block";
 
     private final ProxyServer Proxy;
     private final Logger Logger;
+    private final Path DataDirectory;
+    private final Map<String, String> serverIcons = new ConcurrentHashMap<>();
+    private String defaultIcon = DEFAULT_ICON_FALLBACK;
 
     @Inject
-    public SBCServerVelocity(ProxyServer proxy, Logger logger) {
+    public SBCServerVelocity(ProxyServer proxy, Logger logger, @DataDirectory Path dataDirectory) {
         Proxy = proxy;
         Logger = logger;
+        DataDirectory = dataDirectory;
+    }
+
+    private void loadConfig() {
+        Path configFile = DataDirectory.resolve("config.properties");
+        Properties props = new Properties();
+        if (!Files.exists(configFile)) {
+            try {
+                Files.createDirectories(DataDirectory);
+                props.setProperty(DEFAULT_ICON_KEY, DEFAULT_ICON_FALLBACK);
+                try (OutputStream out = Files.newOutputStream(configFile)) {
+                    props.store(out, "SBC Velocity Configuration");
+                }
+            } catch (IOException e) {
+                Logger.error("Failed to write default config, using built-in defaults", e);
+                return;
+            }
+        }
+        try (InputStream in = Files.newInputStream(configFile)) {
+            props.load(in);
+        } catch (IOException e) {
+            Logger.error("Failed to load config, using built-in defaults", e);
+            return;
+        }
+        defaultIcon = props.getProperty(DEFAULT_ICON_KEY, DEFAULT_ICON_FALLBACK);
+        Logger.info("Loaded config: default-icon='{}'", defaultIcon);
     }
 
     @Subscribe
     public void onProxyInit(ProxyInitializeEvent event) {
-        RegisterChannels();
+        loadConfig();
+        Proxy.getChannelRegistrar().register(CHANNEL_REQUEST_SERVER_LIST);
+        Proxy.getChannelRegistrar().register(CHANNEL_RESPOND_SERVER_LIST);
+        Proxy.getChannelRegistrar().register(CHANNEL_CONNECT_TO_SERVER);
+        Proxy.getChannelRegistrar().register(CHANNEL_DECLARE_SERVER_ICON);
     }
 
     @Subscribe
-    public void onPluginMessage(PluginMessageEvent event) {
-        if (!(event.getSource() instanceof Player player)) return;
-        if (whenConnectToServer(event, player)) return;
-        if (whenRequestServerList(event, player)) return;
+    @SuppressWarnings("null")
+    public void onServerConnected(ServerPostConnectEvent event) {
+        byte[] request = new byte[0];
+        event.getPlayer().getCurrentServer().ifPresentOrElse(
+            conn -> conn.sendPluginMessage(CHANNEL_DECLARE_SERVER_ICON, request),
+            () -> Logger.warn("No active connection found when requesting icon for '{}'", event.getPlayer().getUsername())
+        );
     }
 
-    private Boolean whenConnectToServer(PluginMessageEvent event, Player player) {
-        if (!event.getIdentifier().equals(CHANNEL_CONNECT_TO_SERVER)) return false;
+    @Subscribe
+    public void onDeclareServerIcon(PluginMessageEvent event) {
+        if (!event.getIdentifier().equals(CHANNEL_DECLARE_SERVER_ICON)) return;
+        event.setResult(PluginMessageEvent.ForwardResult.handled());
+        if (!(event.getSource() instanceof ServerConnection serverConnection)) return;
+
+        String serverName = serverConnection.getServerInfo().getName();
+        String icon = ByteArrayUtil.readString(ByteStreams.newDataInput(event.getData()));
+        serverIcons.put(serverName, icon);
+        Logger.info("Cached icon for '{}': '{}'", serverName, icon);
+    }
+
+    @Subscribe
+    public void onConnectToServer(PluginMessageEvent event) {
+        if (!(event.getSource() instanceof Player player)) return;
+        if (!event.getIdentifier().equals(CHANNEL_CONNECT_TO_SERVER)) return;
 
         event.setResult(PluginMessageEvent.ForwardResult.handled());
         byte[] data = event.getData();
-        if (data == null) return false;
-        String serverId = readString(ByteStreams.newDataInput(data));
+        if (data == null) return;
+        String serverId = ByteArrayUtil.readString(ByteStreams.newDataInput(data));
         Proxy.getServer(serverId).ifPresentOrElse(
             server -> player.createConnectionRequest(server).connectWithIndication(),
             () -> Logger.warn("Player '{}' requested unknown server '{}'", player.getUsername(), serverId)
         );
-        return true;
     }
 
-    private Boolean whenRequestServerList(PluginMessageEvent event, Player player) {
-        if (!event.getIdentifier().equals(CHANNEL_REQUEST_SERVER_LIST)) return false;
+    @Subscribe
+    public void onRequestServerList(PluginMessageEvent event) {
+        if (!(event.getSource() instanceof Player player)) return;
+        if (!event.getIdentifier().equals(CHANNEL_REQUEST_SERVER_LIST)) return;
 
         event.setResult(PluginMessageEvent.ForwardResult.handled());
         Logger.info("Received server list request from player '{}'", player.getUsername());
@@ -79,24 +141,18 @@ public class SBCServerVelocity implements SBCServerPlugin {
             .orElse("");
         GetServerList(currentServerName).thenAccept(servers -> {
             ByteArrayDataOutput out = ByteStreams.newDataOutput();
-            writeVarInt(out, servers.size());
+            ByteArrayUtil.writeVarInt(out, servers.size());
             servers.forEach(server -> {
-                writeString(out, server.Id());
-                writeString(out, server.Name());
-                writeString(out, server.IconMaterial());
-                writeBoolean(out, server.IsOnline());
-                writeBoolean(out, server.IsCurrentPlayerServer());
+                ByteArrayUtil.writeString(out, server.Id());
+                ByteArrayUtil.writeString(out, server.Name());
+                ByteArrayUtil.writeString(out, server.IconMaterial());
+                ByteArrayUtil.writeBoolean(out, server.IsOnline());
+                ByteArrayUtil.writeBoolean(out, server.IsCurrentPlayerServer());
             });
             Logger.info("Sending server list response to player '{}' with {} server(s)", player.getUsername(), servers.size());
             player.sendPluginMessage(CHANNEL_RESPOND_SERVER_LIST, out.toByteArray());
         });
-        return true;
-    }
-
-    public void RegisterChannels() {
-        Proxy.getChannelRegistrar().register(CHANNEL_REQUEST_SERVER_LIST);
-        Proxy.getChannelRegistrar().register(CHANNEL_RESPOND_SERVER_LIST);
-        Proxy.getChannelRegistrar().register(CHANNEL_CONNECT_TO_SERVER);
+        return;
     }
 
     public CompletableFuture<List<ServerEntry>> GetServerList(String currentServerName) {
@@ -104,9 +160,10 @@ public class SBCServerVelocity implements SBCServerPlugin {
             .map(server -> {
                 String name = server.getServerInfo().getName();
                 boolean isCurrent = name.equals(currentServerName);
+                String icon = serverIcons.getOrDefault(name, defaultIcon);
                 return server.ping()
-                    .<ServerEntry>thenApply(sp -> new ServerEntry(name, name, "", true, isCurrent))
-                    .exceptionally(ex -> new ServerEntry(name, name, "", false, isCurrent));
+                    .<ServerEntry>thenApply(sp -> new ServerEntry(name, name, icon, true, isCurrent))
+                    .exceptionally(ex -> new ServerEntry(name, name, icon, false, isCurrent));
             })
             .collect(Collectors.toList());
 
@@ -114,41 +171,5 @@ public class SBCServerVelocity implements SBCServerPlugin {
             .thenApply(v -> futures.stream()
                 .map(CompletableFuture::join)
                 .collect(Collectors.toList()));
-    }
-
-    private static int readVarInt(ByteArrayDataInput in) {
-        int value = 0;
-        int shift = 0;
-        byte b;
-        do {
-            b = in.readByte();
-            value |= (b & 0x7F) << shift;
-            shift += 7;
-        } while ((b & 0x80) != 0);
-        return value;
-    }
-
-    private static String readString(ByteArrayDataInput in) {
-        byte[] bytes = new byte[readVarInt(in)];
-        in.readFully(bytes);
-        return new String(bytes, StandardCharsets.UTF_8);
-    }
-
-    private static void writeVarInt(ByteArrayDataOutput out, int value) {
-        while ((value & ~0x7F) != 0) {
-            out.writeByte((value & 0x7F) | 0x80);
-            value >>>= 7;
-        }
-        out.writeByte(value);
-    }
-
-    private static void writeString(ByteArrayDataOutput out, String value) {
-        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        writeVarInt(out, bytes.length);
-        out.write(bytes);
-    }
-
-    private static void writeBoolean(ByteArrayDataOutput out, Boolean value) {
-        writeVarInt(out, Boolean.compare(value, false));
     }
 }
