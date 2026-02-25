@@ -12,8 +12,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-import com.google.common.io.ByteArrayDataOutput;
-import com.google.common.io.ByteStreams;
 import com.google.inject.Inject;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
@@ -24,12 +22,11 @@ import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
-import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import org.slf4j.Logger;
 
 import org.wilkinsonk.sbc.SoulardiganBackyard;
-import org.wilkinsonk.sbc.SoulardiganBackyard.ServerEntry;
-import org.wilkinsonk.sbc.ByteArrayUtil;
+import org.wilkinsonk.sbc.model.ServerEntry;
+import org.wilkinsonk.sbc.payload.Payload;
 
 @Plugin(
     id = SoulardiganBackyard.NAME,
@@ -37,10 +34,6 @@ import org.wilkinsonk.sbc.ByteArrayUtil;
     version = SoulardiganBackyard.BUILD_VERSION
 )
 public class SBCServerVelocity extends SBCServer {
-    private static final MinecraftChannelIdentifier CHANNEL_REQUEST_SERVER_LIST  = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_REQUEST_SERVER_LIST);
-    private static final MinecraftChannelIdentifier CHANNEL_RESPOND_SERVER_LIST  = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_RESPOND_SERVER_LIST);
-    private static final MinecraftChannelIdentifier CHANNEL_CONNECT_TO_SERVER    = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_CONNECT_TO_SERVER);
-    private static final MinecraftChannelIdentifier CHANNEL_DECLARE_SERVER_ICON  = MinecraftChannelIdentifier.from(SoulardiganBackyard.CHANNEL_TOPIC_DECLARE_SERVER_ICON);
 
     private final ProxyServer Proxy;
     private final Logger Logger;
@@ -83,53 +76,67 @@ public class SBCServerVelocity extends SBCServer {
     @Subscribe
     public void onProxyInit(ProxyInitializeEvent event) {
         loadConfig();
-        Proxy.getChannelRegistrar().register(CHANNEL_REQUEST_SERVER_LIST);
-        Proxy.getChannelRegistrar().register(CHANNEL_RESPOND_SERVER_LIST);
-        Proxy.getChannelRegistrar().register(CHANNEL_CONNECT_TO_SERVER);
-        Proxy.getChannelRegistrar().register(CHANNEL_DECLARE_SERVER_ICON);
+
+        registerChannel(Payload.REQUEST_CONNECT);
+        registerChannel(Payload.REQUEST_SERVER_LIST);
+        registerChannel(Payload.RESPOND_SERVER_ICON);
+        registerChannel(Payload.RESPOND_SERVER_LIST);
+        channels.values().forEach((channel) -> {
+            Proxy.getChannelRegistrar().register(channel);
+        });
     }
 
     @Subscribe
     public void onServerConnected(ServerPostConnectEvent event) {
         byte[] request = new byte[0];
         event.getPlayer().getCurrentServer().ifPresentOrElse(
-            conn -> conn.sendPluginMessage(CHANNEL_DECLARE_SERVER_ICON, request),
+            conn -> conn.sendPluginMessage(getChannel(Payload.RESPOND_SERVER_ICON), request),
             () -> Logger.warn("No active connection found when requesting icon for '{}'", event.getPlayer().getUsername())
         );
     }
 
     @Subscribe
-    @SuppressWarnings("null")
     public void onDeclareServerIcon(PluginMessageEvent event) {
-        if (!event.getIdentifier().equals(CHANNEL_DECLARE_SERVER_ICON)) return;
+        if (!eventIsChannel(event.getIdentifier(), Payload.RESPOND_SERVER_ICON)) return;
         event.setResult(PluginMessageEvent.ForwardResult.handled());
         if (!(event.getSource() instanceof ServerConnection serverConnection)) return;
 
         String serverName = serverConnection.getServerInfo().getName();
-        String icon = ByteArrayUtil.readString(ByteStreams.newDataInput(event.getData()));
-        serverIcons.put(serverName, icon);
-        Logger.info("Cached icon for '{}': '{}'", serverName, icon);
+        try {
+            String json = new String(event.getData());
+            String icon = Payload.RESPOND_SERVER_ICON.FromJson(json).getIcon();
+            serverIcons.put(serverName, icon);
+            Logger.info("Cached icon for '{}': '{}'", serverName, icon);
+        } catch (Exception e) {
+            Logger.error("Failed to deserialize server icon", e);
+        }
     }
 
     @Subscribe
     public void onConnectToServer(PluginMessageEvent event) {
         if (!(event.getSource() instanceof Player player)) return;
-        if (!event.getIdentifier().equals(CHANNEL_CONNECT_TO_SERVER)) return;
+        if (!eventIsChannel(event, Payload.REQUEST_CONNECT)) return;
 
         event.setResult(PluginMessageEvent.ForwardResult.handled());
         byte[] data = event.getData();
         if (data == null) return;
-        String serverId = ByteArrayUtil.readString(ByteStreams.newDataInput(data));
-        Proxy.getServer(serverId).ifPresentOrElse(
-            server -> player.createConnectionRequest(server).connectWithIndication(),
-            () -> Logger.warn("Player '{}' requested unknown server '{}'", player.getUsername(), serverId)
-        );
+
+        try {
+            String json = new String(data);
+            Payload.RequestConnect payload = Payload.REQUEST_CONNECT.FromJson(json);
+            Proxy.getServer(payload.getServerId()).ifPresentOrElse(
+                server -> player.createConnectionRequest(server).connectWithIndication(),
+                () -> Logger.warn("Player '{}' requested unknown server '{}'", player.getUsername(), payload.getServerId())
+            );
+        } catch (Exception e) {
+            Logger.error("Failed to deserialize server connect request", e);
+        }
     }
 
     @Subscribe
     public void onRequestServerList(PluginMessageEvent event) {
         if (!(event.getSource() instanceof Player player)) return;
-        if (!event.getIdentifier().equals(CHANNEL_REQUEST_SERVER_LIST)) return;
+        if (!eventIsChannel(event, Payload.REQUEST_SERVER_LIST)) return;
 
         event.setResult(PluginMessageEvent.ForwardResult.handled());
         Logger.info("Received server list request from player '{}'", player.getUsername());
@@ -137,22 +144,21 @@ public class SBCServerVelocity extends SBCServer {
             .map(sc -> sc.getServerInfo().getName())
             .orElse("");
         GetServerList(currentServerName).thenAccept(servers -> {
-            ByteArrayDataOutput out = ByteStreams.newDataOutput();
-            ByteArrayUtil.writeVarInt(out, servers.size());
-            servers.forEach(server -> {
-                ByteArrayUtil.writeString(out, server.Id());
-                ByteArrayUtil.writeString(out, server.Name());
-                ByteArrayUtil.writeString(out, server.IconMaterial());
-                ByteArrayUtil.writeBoolean(out, server.IsOnline());
-                ByteArrayUtil.writeBoolean(out, server.IsCurrentPlayerServer());
-            });
-            Logger.info("Sending server list response to player '{}' with {} server(s)", player.getUsername(), servers.size());
-            player.sendPluginMessage(CHANNEL_RESPOND_SERVER_LIST, out.toByteArray());
+            try {
+                String json = Payload.RespondServerList
+                    .builder()
+                    .servers(servers)
+                    .build()
+                    .IntoJson();
+                Logger.info("Sending server list response to player '{}' with {} server(s)", player.getUsername(), servers.size());
+                player.sendPluginMessage(getChannel(Payload.RESPOND_SERVER_LIST), json.getBytes());
+            } catch (Exception e) {
+                Logger.error("Failed to serialize server list response", e);
+            }
         });
-        return;
     }
 
-    public CompletableFuture<List<ServerEntry>> GetServerList(String currentServerName) {
+    private CompletableFuture<List<ServerEntry>> GetServerList(String currentServerName) {
         List<CompletableFuture<ServerEntry>> futures = Proxy.getAllServers().stream()
             .map(server -> {
                 String name = server.getServerInfo().getName();

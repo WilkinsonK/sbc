@@ -5,12 +5,16 @@
 commons-math3 = "3.6.1"
 groovy = "3.0.24"
 guava = "33.4.5-jre"
+jackson = "2.18.1"
 junit = "4.13.2"
+lombok = "1.18.30"
 spock-core = "2.2-groovy-3.0"
 
 [libraries]
 commons-math3 = { module = "org.apache.commons:commons-math3", version.ref = "commons-math3" }
 groovy = { module = "org.codehaus.groovy:groovy", version.ref = "groovy" }
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 junit = { module = "junit:junit", version.ref = "junit" }
+lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
 spock-core = { module = "org.spockframework:spock-core", version.ref = "spock-core" }

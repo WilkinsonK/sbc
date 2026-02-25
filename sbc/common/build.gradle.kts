@@ -31,9 +31,12 @@ dependencies {
 
     // This dependency is exported to consumers, that is to say found on their compile classpath.
     api(libs.commons.math3)
+    api(libs.jackson.databind)
 
     // This dependency is used internally, and not exposed to consumers on their own compile classpath.
     implementation(libs.guava)
+    compileOnly(libs.lombok)
+    annotationProcessor(libs.lombok)
 }
 
 // Apply a specific Java toolchain to ease working on different environments.

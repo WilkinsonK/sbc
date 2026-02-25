@@ -21,41 +21,4 @@ public class SoulardiganBackyard {
      * The human readable plugin name.
      */
     public static final String TITLE = "Soulardigan Backyard";
-
-    public class CHANNEL_TOPIC {
-        /**
-         * Listener topic to subscribe to for when a server list
-         * is requested.
-        */
-        public static final String REQUEST_SERVER_LIST = "request_server_list";
-        /**
-         * Listener topic to subscribe to for when a server list
-         * is returned by the requestee.
-        */
-        public static final String RESPOND_SERVER_LIST = "respond_server_list";
-        /**
-         * Listener topic to subscribe to for when a player requests
-         * to connect to a specific server.
-        */
-        public static final String CONNECT_TO_SERVER = "connect_to_server";
-        /**
-         * Listener topic to subscribe to for when a backend provides
-         * an icon.
-         */
-        public static final String DECLARE_SERVER_ICON = "declare_server_icon";
-
-        public static String GetFQCT(String topicName) {
-            return String.format("%s:%s", NAME, topicName);
-        }
-    }
-    public static final String CHANNEL_TOPIC_REQUEST_SERVER_LIST = CHANNEL_TOPIC.GetFQCT(CHANNEL_TOPIC.REQUEST_SERVER_LIST);
-    public static final String CHANNEL_TOPIC_RESPOND_SERVER_LIST = CHANNEL_TOPIC.GetFQCT(CHANNEL_TOPIC.RESPOND_SERVER_LIST);
-    public static final String CHANNEL_TOPIC_CONNECT_TO_SERVER   = CHANNEL_TOPIC.GetFQCT(CHANNEL_TOPIC.CONNECT_TO_SERVER);
-    public static final String CHANNEL_TOPIC_DECLARE_SERVER_ICON = CHANNEL_TOPIC.GetFQCT(CHANNEL_TOPIC.DECLARE_SERVER_ICON);
-
-    /**
-     * A single server entry type.
-     */
-    public record ServerEntry(String Id, String Name, String IconMaterial, Boolean IsOnline, Boolean IsCurrentPlayerServer) {}
-
 }
